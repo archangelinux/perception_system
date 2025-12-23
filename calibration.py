@@ -6,7 +6,7 @@ import glob #for file pattern matching
 import os
 import matplotlib.pyplot as plt
 
-# termination criteria for OpenCVs optimiztaion algorithm
+# termination criteria for OpenCVs optimization algorithm
 # when to stop refining corner detection (for cornerSubPix)
 # either 30 iterations or accuracy of 0.001 pixels, whichever comes first
 criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
