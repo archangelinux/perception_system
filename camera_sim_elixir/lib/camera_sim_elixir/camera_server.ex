@@ -40,14 +40,21 @@ defmodule CameraSimElixir.CameraServer do
     #this function runs when the process receives a message
     def handle_info(:new_frame, state) do
         #random data placeholders
-        left = :rand.uniform()
-        right = :rand.uniform()
-        disparity = abs(left - right)
+        #left = :rand.uniform()
+        #right = :rand.uniform()
+        #disparity = abs(left - right)
+        {output, 0} = System.cmd("python3", [
+            "../stereo_processor.py",
+            "../stereo_kitti_images/aloeL.jpg",
+            "../stereo_kitti_images/aloeR.jpg"
+        ])
+
+        result = Jason.decode!(output)
 
         frame = %{
-            left: left,
-            right: right,
-            disparity: disparity
+            left: 0,
+            right: 0,
+            disparity: result["mean"]
         }
 
         #rolling window logic
