@@ -1,11 +1,9 @@
-@moduledoc namespaced module
-defmodule CameraSimElixir.CameraServer do
+defmodule StereoDashboard.CameraServer do
     use GenServer
 
     #declare module attribute (like a global var)
     @frame_interval_ms 33  #~30Hz
 
-    @doc public API
     #starts the GenServer process, registering it globally
     #underscore means argument is unused
     # // [] default argument value
