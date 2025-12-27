@@ -32,23 +32,23 @@ defmodule StereoDashboardWeb.StereoLive do
       <div class="grid grid-cols-3 gap-4 mb-6">
         <div class="bg-blue-50 p-4 rounded">
           <div class="text-sm text-gray-600">FPS</div>
-          <div class="text-2xl font-bold"><%= Float.round(@fps, 1) %></div>
+          <div class="text-2xl font-bold text-green-700"><%= Float.round(@fps, 1) %></div>
         </div>
 
         <div class="bg-green-50 p-4 rounded">
           <div class="text-sm text-gray-600">Frames</div>
-          <div class="text-2xl font-bold"><%= @frame_count %></div>
+          <div class="text-2xl font-bold text-green-700"><%= @frame_count %></div>
         </div>
 
         <div class="bg-purple-50 p-4 rounded">
           <div class="text-sm text-gray-600">Mean Disparity</div>
-          <div class="text-2xl font-bold"><%= Float.round(@mean_disparity, 3) %></div>
+          <div class="text-2xl font-bold text-green-700"><%= Float.round(@mean_disparity, 3) %></div>
         </div>
       </div>
 
       <div class="bg-gray-50 p-4 rounded">
         <div class="text-sm text-gray-600 mb-2">Raw Stats</div>
-        <pre class="text-xs"><%= inspect(@stats, pretty: true) %></pre>
+        <pre class="text-xs text-green-700"><%= inspect(@stats, pretty: true) %></pre>
       </div>
     </div>
     """
