@@ -14,7 +14,7 @@ defmodule StereoDashboardWeb.Router do
     plug :accepts, ["json"]
   end
 
-  scope "/", StereoDashboardWeb do
+  scope "/", StereoDashboardWeb do #prefix
     pipe_through :browser
 
     get "/", PageController, :home

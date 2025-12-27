@@ -25,7 +25,9 @@ defmodule StereoDashboard.CameraServer do
             frame_count: 0,
             frames: [],
             max_window: 100,
-            start_time: System.monotonic_time(:millisecond)
+            start_time: System.monotonic_time(:millisecond),
+            latest_disparity_image: nil,
+            latest_images: %{}
         }
         #elixir rule: state is immutable, but new version can be created
 
@@ -41,19 +43,30 @@ defmodule StereoDashboard.CameraServer do
         #left = :rand.uniform()
         #right = :rand.uniform()
         #disparity = abs(left - right)
-        {output, 0} = System.cmd("python3", [
-            "../stereo_processor.py",
-            "../stereo_kitti_images/aloeL.jpg",
-            "../stereo_kitti_images/aloeR.jpg"
-        ])
-
+        frame = case System.cmd("python3", [
+        "../stereo_processor.py",
+        "../stereo_kitti_images/aloeL.jpg",
+        "../stereo_kitti_images/aloeR.jpg"
+        ]) do
+        {output, 0} ->
         result = Jason.decode!(output)
+        %{
+            disparity: result["mean"],
+            left_image: result["left_image"],
+            right_image: result["right_image"],
+            disparity_image: result["disparity_image"],
+            full_figure: result["full_figure"]
+          }
 
-        frame = %{
-            left: 0,
-            right: 0,
-            disparity: result["mean"]
-        }
+        {_error, _} ->
+          %{
+            disparity: :rand.uniform(),
+            left_image: nil,
+            right_image: nil,
+            disparity_image: nil,
+            full_figure: nil
+          }
+        end
 
         #rolling window logic
         frames = [frame | state.frames] |> Enum.take(state.max_window)
@@ -62,11 +75,21 @@ defmodule StereoDashboard.CameraServer do
 
         new_state = %{
           state | frame_count: state.frame_count + 1,
-            frames: frames
-        }
+            frames: frames,
+            latest_images: frame
+          }
 
         schedule_next_frame()
         {:noreply, new_state} #dont reply just keep running with the new state
+    end
+
+    def get_latest_images do
+      GenServer.call(__MODULE__, :get_latest_images)
+    end
+
+    @impl true
+    def handle_call(:get_latest_images, _from, state) do
+      {:reply, Map.get(state, :latest_images, %{}), state}
     end
 
 
