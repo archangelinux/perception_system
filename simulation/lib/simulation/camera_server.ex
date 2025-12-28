@@ -16,6 +16,18 @@ defmodule Simulation.CameraServer do
     GenServer.call(__MODULE__, :get_stats)
   end
 
+  def start_processing do
+    GenServer.call(__MODULE__, :start_processing)
+  end
+
+  def stop_processing do
+    GenServer.call(__MODULE__, :stop_processing)
+  end
+
+  def reset do
+    GenServer.call(__MODULE__, :reset)
+  end
+
   # callbacks
 
   @impl true
@@ -27,7 +39,9 @@ defmodule Simulation.CameraServer do
       max_window: 100,
       dataset_path: "data/kitti/image_2",
       start_time: System.monotonic_time(:millisecond),
-      port: nil
+      port: nil,
+      running: false,  # Start in stopped state
+      timer_ref: nil
     }
 
     #spawn stereo worker python script
@@ -41,46 +55,57 @@ defmodule Simulation.CameraServer do
         args: [worker_path]
       ])
 
-    schedule_next_frame()
+    # Don't auto-start processing
     {:ok, %{state | port: port}}
   end
 
   @impl true
   def handle_info(:new_frame, state) do
-    idx =
-      state.frame_idx
-      |> Integer.to_string()
-      |> String.pad_leading(6, "0")
+    if not state.running do
+      # If stopped, don't process or schedule next frame
+      {:noreply, state}
+    else
+      idx =
+        state.frame_idx
+        |> Integer.to_string()
+        |> String.pad_leading(6, "0")
 
-    left_path = "#{state.dataset_path}/#{idx}_10.png"
-    right_path = "#{state.dataset_path}/#{idx}_11.png"
+      left_path = "#{state.dataset_path}/#{idx}_10.png"
+      right_path = "#{state.dataset_path}/#{idx}_11.png"
 
-    new_state =
-      if File.exists?(left_path) and File.exists?(right_path) do
-        # pass paths/references
-        frame = %{
-          idx: state.frame_idx,
-          left: left_path,
-          right: right_path
-        }
-        payload = Jason.encode!(%{
-          left: frame.left,
-          right: frame.right
-        })
-        Port.command(state.port, payload <> "\n") # writes data to python process's stdin
+      new_state =
+        if File.exists?(left_path) and File.exists?(right_path) do
+          # pass paths/references
+          frame = %{
+            idx: state.frame_idx,
+            left: left_path,
+            right: right_path
+          }
+          payload = Jason.encode!(%{
+            left: frame.left,
+            right: frame.right
+          })
+          Port.command(state.port, payload <> "\n") # writes data to python process's stdin
 
-        %{
-          state
-          | frame_idx: state.frame_idx + 1,
-            frame_count: state.frame_count + 1,
-            frames: [frame | state.frames] |> Enum.take(state.max_window)
-        }
+          %{
+            state
+            | frame_idx: state.frame_idx + 1,
+              frame_count: state.frame_count + 1,
+              frames: [frame | state.frames] |> Enum.take(state.max_window)
+          }
 
-      else
-        %{state | frame_idx: 0}
+        else
+          # Reached end of dataset - stop processing
+          IO.puts("[camera_server] Finished processing all frames")
+          %{state | running: false}
+        end
+
+      if new_state.running do
+        schedule_next_frame()
       end
-    schedule_next_frame()
-    {:noreply, new_state}
+
+      {:noreply, new_state}
+    end
   end
 
   #handles python worker process stdout
@@ -88,6 +113,10 @@ defmodule Simulation.CameraServer do
   def handle_info({port, {:data, data}}, %{port: port} = state) do
     result = Jason.decode!(data)
     IO.inspect(result, label: "Stereo result")
+
+    # Broadcast to LiveView subscribers
+    Phoenix.PubSub.broadcast(Simulation.PubSub, "stereo_updates", {:stereo_result, result})
+
     {:noreply, state}
   end
 
@@ -107,9 +136,39 @@ defmodule Simulation.CameraServer do
      %{
        frame_count: state.frame_count,
        fps: fps,
-       current_frame: state.frame_idx # the image number
+       current_frame: state.frame_idx, # the image number
+       running: state.running
      },
      state}
+  end
+
+  @impl true
+  def handle_call(:start_processing, _from, state) do
+    if not state.running do
+      schedule_next_frame()
+      {:reply, :ok, %{state | running: true, start_time: System.monotonic_time(:millisecond)}}
+    else
+      {:reply, {:error, :already_running}, state}
+    end
+  end
+
+  @impl true
+  def handle_call(:stop_processing, _from, state) do
+    {:reply, :ok, %{state | running: false}}
+  end
+
+  @impl true
+  def handle_call(:reset, _from, state) do
+    # Reset to initial state (but keep port alive)
+    {:reply, :ok,
+     %{
+       state
+       | frame_idx: 0,
+         frame_count: 0,
+         frames: [],
+         running: false,
+         start_time: System.monotonic_time(:millisecond)
+     }}
   end
 
   defp schedule_next_frame do

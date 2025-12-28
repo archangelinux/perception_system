@@ -18,6 +18,7 @@ defmodule SimulationWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    live "/stereo", StereoLive
   end
 
   # Other scopes may use custom stacks.
