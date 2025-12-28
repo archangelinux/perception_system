@@ -1,4 +1,8 @@
 defmodule Simulation.CameraServer do
+  @moduledoc """
+    processes input data stream of 200 images from left and right stereo cameras at 30 Hz
+    testing dataset from KITTI stereo/scene flow 2015
+  """
   use GenServer
 
   @frame_interval_ms 33 # 30 fps
@@ -21,12 +25,24 @@ defmodule Simulation.CameraServer do
       frame_count: 0,
       frames: [],
       max_window: 100,
-      dataset_path: "data/kitti/image_2", # dataset of 200 images from left and right stereo cameras
-      start_time: System.monotonic_time(:millisecond)
+      dataset_path: "data/kitti/image_2",
+      start_time: System.monotonic_time(:millisecond),
+      port: nil
     }
 
+    #spawn stereo worker python script
+    python_path = System.find_executable("python3") || "/opt/homebrew/bin/python3"
+    worker_path = Path.join([File.cwd!(), "workers", "stereo_worker.py"])
+
+    port = Port.open({:spawn_executable, python_path},
+      [
+        :binary,
+        :exit_status,
+        args: [worker_path]
+      ])
+
     schedule_next_frame()
-    {:ok, state}
+    {:ok, %{state | port: port}}
   end
 
   @impl true
@@ -47,6 +63,11 @@ defmodule Simulation.CameraServer do
           left: left_path,
           right: right_path
         }
+        payload = Jason.encode!(%{
+          left: frame.left,
+          right: frame.right
+        })
+        Port.command(state.port, payload <> "\n") # writes data to python process's stdin
 
         %{
           state
@@ -54,12 +75,20 @@ defmodule Simulation.CameraServer do
             frame_count: state.frame_count + 1,
             frames: [frame | state.frames] |> Enum.take(state.max_window)
         }
+
       else
         %{state | frame_idx: 0}
       end
-
     schedule_next_frame()
     {:noreply, new_state}
+  end
+
+  #handles python worker process stdout
+  @impl true
+  def handle_info({port, {:data, data}}, %{port: port} = state) do
+    result = Jason.decode!(data)
+    IO.inspect(result, label: "Stereo result")
+    {:noreply, state}
   end
 
   @impl true
