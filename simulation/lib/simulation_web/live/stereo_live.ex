@@ -22,7 +22,11 @@ defmodule SimulationWeb.StereoLive do
        valid_pixels_sum: 0,
        processed_count: 0,
        history: [],
-       max_history: 100
+       max_history: 100,
+       # Latest images (base64 encoded)
+       left_img: nil,
+       right_img: nil,
+       disparity_img: nil
      )}
   end
 
@@ -64,7 +68,10 @@ defmodule SimulationWeb.StereoLive do
        latency_sum: 0.0,
        valid_pixels_sum: 0,
        processed_count: 0,
-       history: []
+       history: [],
+       left_img: nil,
+       right_img: nil,
+       disparity_img: nil
      )}
   end
 
@@ -86,7 +93,11 @@ defmodule SimulationWeb.StereoLive do
        disparity_sum: socket.assigns.disparity_sum + mean_disp,
        latency_sum: socket.assigns.latency_sum + (result["latency_ms"] || 0.0),
        valid_pixels_sum: socket.assigns.valid_pixels_sum + (result["valid_pixels"] || 0),
-       processed_count: new_count
+       processed_count: new_count,
+       # Update latest images
+       left_img: result["left_img"],
+       right_img: result["right_img"],
+       disparity_img: result["disparity_img"]
      )}
   end
 
@@ -105,39 +116,36 @@ defmodule SimulationWeb.StereoLive do
 
             <!-- Control Buttons -->
             <div class="flex gap-3">
-              <%= if @current_frame >= 200 do %>
-                <!-- Only show Reset when complete -->
-                <button phx-click="reset" class="btn btn-primary btn-lg gap-2">
+              <%= if @running do %>
+                <!-- Show Stop when running -->
+                <button phx-click="stop" class="btn btn-warning btn-lg gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Reset
+                  Stop
                 </button>
               <% else %>
-                <%= if @running do %>
-                  <button phx-click="stop" class="btn btn-warning btn-lg gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Stop
-                  </button>
-                <% else %>
-                  <button phx-click="start" class="btn btn-success btn-lg gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Start
-                  </button>
-                <% end %>
-
-                <button phx-click="reset" class="btn btn-outline btn-lg gap-2">
+                <!-- Show Start when not running -->
+                <button
+                  phx-click="start"
+                  class={"btn btn-success btn-lg gap-2 #{if @current_frame >= 200, do: "btn-disabled"}"}
+                  disabled={@current_frame >= 200}
+                >
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Reset
+                  <%= if @current_frame >= 200, do: "Complete", else: "Start" %>
                 </button>
               <% end %>
+
+              <!-- Always show Reset -->
+              <button phx-click="reset" class="btn btn-outline btn-lg gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Reset
+              </button>
             </div>
           </div>
 
@@ -339,42 +347,72 @@ defmodule SimulationWeb.StereoLive do
           </div>
         </div>
 
-        <!-- Image Viewer Section (placeholder for future) -->
+        <!-- Image Viewer Section -->
         <div class="card bg-base-200 shadow-lg">
           <div class="card-body">
             <h2 class="card-title text-secondary text-2xl mb-4">
               Frame Viewer
-              <span class="badge badge-warning">Coming Soon</span>
+              <%= if @left_img do %>
+                <span class="badge badge-success">Frame <%= @current_frame %></span>
+              <% else %>
+                <span class="badge badge-warning">Waiting for data...</span>
+              <% end %>
             </h2>
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div class="bg-base-300 rounded-lg p-8 text-center">
-                <p class="text-base-content/50">Left Camera</p>
-                <div class="aspect-video bg-base-100 rounded mt-2 flex items-center justify-center">
-                  <span class="text-base-content/30">Image Preview</span>
+            <!-- Stereo Camera Views -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+              <!-- Left Camera -->
+              <div class="bg-base-300 rounded-lg p-4">
+                <p class="text-base-content/70 font-semibold mb-2 text-center">Left Camera</p>
+                <div class="bg-base-100 rounded overflow-hidden">
+                  <%= if @left_img do %>
+                    <img
+                      src={"data:image/jpeg;base64,#{@left_img}"}
+                      alt="Left camera view"
+                      class="w-full h-auto"
+                    />
+                  <% else %>
+                    <div class="aspect-video flex items-center justify-center">
+                      <span class="text-base-content/30">No image</span>
+                    </div>
+                  <% end %>
                 </div>
               </div>
-              <div class="bg-base-300 rounded-lg p-8 text-center">
-                <p class="text-base-content/50">Right Camera</p>
-                <div class="aspect-video bg-base-100 rounded mt-2 flex items-center justify-center">
-                  <span class="text-base-content/30">Image Preview</span>
-                </div>
-              </div>
-              <div class="bg-base-300 rounded-lg p-8 text-center">
-                <p class="text-base-content/50">Disparity Map</p>
-                <div class="aspect-video bg-base-100 rounded mt-2 flex items-center justify-center">
-                  <span class="text-base-content/30">Disparity Heatmap</span>
+
+              <!-- Right Camera -->
+              <div class="bg-base-300 rounded-lg p-4">
+                <p class="text-base-content/70 font-semibold mb-2 text-center">Right Camera</p>
+                <div class="bg-base-100 rounded overflow-hidden">
+                  <%= if @right_img do %>
+                    <img
+                      src={"data:image/jpeg;base64,#{@right_img}"}
+                      alt="Right camera view"
+                      class="w-full h-auto"
+                    />
+                  <% else %>
+                    <div class="aspect-video flex items-center justify-center">
+                      <span class="text-base-content/30">No image</span>
+                    </div>
+                  <% end %>
                 </div>
               </div>
             </div>
-            <div class="mt-4 flex justify-center">
-              <input
-                type="range"
-                min="0"
-                max="200"
-                value={@current_frame}
-                class="range range-primary w-full max-w-2xl"
-                disabled
-              />
+
+            <!-- Disparity Map (Full Width) -->
+            <div class="bg-base-300 rounded-lg p-6">
+              <p class="text-base-content/70 font-semibold mb-3 text-center text-lg">Disparity Map (Matplotlib Turbo)</p>
+              <div class="bg-base-100 rounded overflow-hidden">
+                <%= if @disparity_img do %>
+                  <img
+                    src={"data:image/png;base64,#{@disparity_img}"}
+                    alt="Disparity heatmap"
+                    class="w-full h-auto"
+                  />
+                <% else %>
+                  <div class="aspect-video flex items-center justify-center">
+                    <span class="text-base-content/30 text-xl">No disparity map</span>
+                  </div>
+                <% end %>
+              </div>
             </div>
           </div>
         </div>

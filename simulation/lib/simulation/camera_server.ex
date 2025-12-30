@@ -41,7 +41,8 @@ defmodule Simulation.CameraServer do
       start_time: System.monotonic_time(:millisecond),
       port: nil,
       running: false,  # Start in stopped state
-      timer_ref: nil
+      timer_ref: nil,
+      buffer: ""  # Buffer for incomplete JSON lines
     }
 
     #spawn stereo worker python script
@@ -52,6 +53,7 @@ defmodule Simulation.CameraServer do
       [
         :binary,
         :exit_status,
+        {:line, 1024 * 1024},  # Use line mode with 1MB line buffer
         args: [worker_path]
       ])
 
@@ -108,11 +110,12 @@ defmodule Simulation.CameraServer do
     end
   end
 
-  #handles python worker process stdout
+  #handles python worker process stdout (line mode)
   @impl true
-  def handle_info({port, {:data, data}}, %{port: port} = state) do
-    result = Jason.decode!(data)
-    IO.inspect(result, label: "Stereo result")
+  def handle_info({port, {:data, {:eol, line}}}, %{port: port} = state) do
+    result = Jason.decode!(line)
+    # Don't log the full result (too big with images)
+    IO.puts("[camera_server] Processed frame #{state.frame_idx}, latency: #{result["latency_ms"]}ms")
 
     # Broadcast to LiveView subscribers
     Phoenix.PubSub.broadcast(Simulation.PubSub, "stereo_updates", {:stereo_result, result})
@@ -167,6 +170,7 @@ defmodule Simulation.CameraServer do
          frame_count: 0,
          frames: [],
          running: false,
+         buffer: "",
          start_time: System.monotonic_time(:millisecond)
      }}
   end
